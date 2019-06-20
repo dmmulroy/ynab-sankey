@@ -1,6 +1,6 @@
 import * as ynab from 'ynab';
 
-class Client {
+class YNABSankey {
   constructor(token) {
     if (!token) throw new Error('must provide a ynab token');
     this.token = token;
@@ -25,7 +25,7 @@ class Client {
         month
       );
 
-      this._sankey = new YNABSankey(category_groups, monthData.month);
+      this._sankey = new YNABSankeyTree(category_groups, monthData.month);
       return { nodes: this._sankey.getNodes(), links: this._sankey.getLinks() };
     } catch (error) {
       throw new Error(`error creating YNABSankey: ${error}`);
@@ -33,9 +33,9 @@ class Client {
   };
 }
 
-class YNABSankey {
+class YNABSankeyTree {
   constructor(categoryGroups, month) {
-    this.root = {
+    this._root = {
       id: '__ROOT__',
       name: 'Budgeted Income',
       value: month.budgeted,
@@ -44,10 +44,10 @@ class YNABSankey {
     this._nodes = [];
     this._links = [];
 
-    this._buildSankey(categoryGroups, month);
+    this._buildTree(categoryGroups, month);
   }
 
-  _buildSankey = (categoryGroups, month) => {
+  _buildTree = (categoryGroups, month) => {
     const categoriesByGroupId = month.categories.reduce((acc, category) => {
       if (acc[category.category_group_id]) {
         acc[category.category_group_id].push(category);
@@ -86,6 +86,7 @@ class YNABSankey {
         []
       );
 
+      // If none of the child categories have a budgeted balance don't add the node
       if (categoryGroupBudgeted === 0) return;
 
       const node = {
@@ -95,41 +96,8 @@ class YNABSankey {
         children: categoryNodes
       };
 
-      this.root.children.push(node);
+      this._root.children.push(node);
     });
-  };
-
-  _insertCategoryGroupNode = categoryGroup => {
-    if (categoryGroup.hidden || categoryGroup.deleted) return;
-
-    let categoryGroupBudgeted = 0;
-
-    const categoryNodes = categoryGroup.categories.reduce((acc, category) => {
-      if (category.hidden || category.deleted || category.budgeted === 0)
-        return acc;
-
-      categoryGroupBudgeted += category.budgeted;
-
-      acc.push({
-        id: category.id,
-        name: category.name,
-        value: category.budgeted,
-        children: []
-      });
-
-      return acc;
-    }, []);
-
-    if (categoryGroupBudgeted === 0) return;
-
-    const node = {
-      id: categoryGroup.id,
-      name: categoryGroup.name,
-      value: categoryGroupBudgeted,
-      children: categoryNodes
-    };
-
-    this.root.children.push(node);
   };
 
   getNodes = () => {
@@ -145,8 +113,8 @@ class YNABSankey {
       return nodes;
     };
 
-    this._nodes = _getNodes(this.root);
-    return [...this._nodes];
+    this._nodes = _getNodes(this._root);
+    return this._nodes;
   };
 
   getLinks = () => {
@@ -178,10 +146,10 @@ class YNABSankey {
       return links;
     };
 
-    this._links = _getLinks(this.root);
+    this._links = _getLinks(this._root);
 
-    return [...this._links];
+    return this._links;
   };
 }
 
-export default Client;
+export default YNABSankey;
