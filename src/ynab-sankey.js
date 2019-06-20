@@ -26,7 +26,6 @@ class Client {
       );
 
       this._sankey = new YNABSankey(category_groups, monthData.month);
-
       return { nodes: this._sankey.getNodes(), links: this._sankey.getLinks() };
     } catch (error) {
       throw new Error(`error creating YNABSankey: ${error}`);
@@ -35,18 +34,70 @@ class Client {
 }
 
 class YNABSankey {
-  constructor(categoryGroups, month = 'currnet') {
+  constructor(categoryGroups, month) {
     this.root = {
       id: '__ROOT__',
       name: 'Budgeted Income',
       value: month.budgeted,
       children: []
     };
-    this._nodeCache = [];
-    this._linksCache = [];
+    this._nodes = [];
+    this._links = [];
 
-    categoryGroups.forEach(this._insertCategoryGroupNode);
+    this._buildSankey(categoryGroups, month);
   }
+
+  _buildSankey = (categoryGroups, month) => {
+    const categoriesByGroupId = month.categories.reduce((acc, category) => {
+      if (acc[category.category_group_id]) {
+        acc[category.category_group_id].push(category);
+      } else {
+        acc[category.category_group_id] = [category];
+      }
+      return acc;
+    }, {});
+
+    categoryGroups.forEach(categoryGroup => {
+      if (
+        categoryGroup.hidden ||
+        categoryGroup.deleted ||
+        !categoriesByGroupId[categoryGroup.id]
+      )
+        return;
+
+      let categoryGroupBudgeted = 0;
+
+      const categoryNodes = categoriesByGroupId[categoryGroup.id].reduce(
+        (acc, category) => {
+          if (category.hidden || category.deleted || category.budgeted === 0)
+            return acc;
+
+          categoryGroupBudgeted += category.budgeted;
+
+          acc.push({
+            id: category.id,
+            name: category.name,
+            value: category.budgeted,
+            children: []
+          });
+
+          return acc;
+        },
+        []
+      );
+
+      if (categoryGroupBudgeted === 0) return;
+
+      const node = {
+        id: categoryGroup.id,
+        name: categoryGroup.name,
+        value: categoryGroupBudgeted,
+        children: categoryNodes
+      };
+
+      this.root.children.push(node);
+    });
+  };
 
   _insertCategoryGroupNode = categoryGroup => {
     if (categoryGroup.hidden || categoryGroup.deleted) return;
@@ -82,7 +133,7 @@ class YNABSankey {
   };
 
   getNodes = () => {
-    if (this._nodeCache.length > 0) return this._nodeCache;
+    if (this._nodes.length > 0) return this._nodes;
 
     const _getNodes = (node, nodes = []) => {
       nodes.push(node);
@@ -94,18 +145,18 @@ class YNABSankey {
       return nodes;
     };
 
-    this._nodeCache = _getNodes(this.root);
-    return [...this._nodeCache];
+    this._nodes = _getNodes(this.root);
+    return [...this._nodes];
   };
 
   getLinks = () => {
-    if (this._linksCache.length > 0) return this._linksCache;
+    if (this._links.length > 0) return this._links;
 
-    if (this._nodeCache.length === 0) {
+    if (this._nodes.length === 0) {
       this.getNodes();
     }
 
-    const indexLookup = this._nodeCache.reduce((lookup, node, idx) => {
+    const indexLookup = this._nodes.reduce((lookup, node, idx) => {
       lookup[node.id] = idx;
 
       return lookup;
@@ -127,9 +178,9 @@ class YNABSankey {
       return links;
     };
 
-    this._linksCache = _getLinks(this.root);
+    this._links = _getLinks(this.root);
 
-    return [...this._linksCache];
+    return [...this._links];
   };
 }
 
